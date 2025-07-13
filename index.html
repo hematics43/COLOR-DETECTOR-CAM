@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Switch Camera Color Detector</title>
+  <style>
+    body {
+      background: #111;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+
+    h1 {
+      text-shadow: 0 0 10px #0ff;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(8px);
+      border-radius: 20px;
+      padding: 20px;
+      margin: auto;
+      width: 95%;
+      max-width: 500px;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    }
+
+    video {
+      width: 100%;
+      border-radius: 16px;
+      border: 3px solid #0ff;
+      margin-top: 10px;
+    }
+
+    #colorBox {
+      width: 100px;
+      height: 100px;
+      margin: 15px auto;
+      border: 3px solid white;
+      border-radius: 10px;
+      box-shadow: 0 0 12px white;
+    }
+
+    .info {
+      font-size: 1.1rem;
+      margin: 5px 0;
+    }
+
+    button {
+      margin: 10px 5px;
+      padding: 10px 20px;
+      font-weight: bold;
+      font-size: 1rem;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(45deg, #0ff, #00f2ff);
+      box-shadow: 0 0 10px #0ff;
+      color: #000;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #00e6e6;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎨 Switch Camera Color Detector</h1>
+  <div class="card">
+    <button onclick="switchCamera()">🔄 Switch Camera</button>
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div id="colorBox"></div>
+    <div class="info" id="rgbText">RGB:</div>
+    <div class="info" id="hexText">Hex:</div>
+    <div class="info" id="nameText">Color Name:</div>
+
+    <button onclick="copyColor('rgb')">Copy RGB</button>
+    <button onclick="copyColor('hex')">Copy Hex</button>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const rgbText = document.getElementById('rgbText');
+    const hexText = document.getElementById('hexText');
+    const nameText = document.getElementById('nameText');
+    const colorBox = document.getElementById('colorBox');
+
+    let currentStream;
+    let usingFront = true;
+
+    async function startCamera(facingMode = 'user') {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      try {
+        const constraints = {
+          video: { facingMode: { exact: facingMode } }
+        };
+
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+      } catch (err) {
+        alert("Error accessing camera: " + err.message);
+        console.error(err);
+      }
+    }
+
+    function switchCamera() {
+      usingFront = !usingFront;
+      startCamera(usingFront ? 'user' : 'environment');
+    }
+
+    function rgbToHex(r, g, b) {
+      return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    }
+
+    function copyColor(type) {
+      const text = type === 'rgb'
+        ? rgbText.textContent.split(": ")[1]
+        : hexText.textContent.split(": ")[1];
+      navigator.clipboard.writeText(text).then(() => {
+        alert(`${type.toUpperCase()} copied: ${text}`);
+      });
+    }
+
+    video.addEventListener('click', function (e) {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, w, h);
+
+      const rect = video.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const scaleX = w / rect.width;
+      const scaleY = h / rect.height;
+      const realX = Math.floor(x * scaleX);
+      const realY = Math.floor(y * scaleY);
+
+      const pixel = ctx.getImageData(realX, realY, 1, 1).data;
+      const [r, g, b] = pixel;
+      const rgb = `rgb(${r}, ${g}, ${b})`;
+      const hex = rgbToHex(r, g, b);
+      const name = getClosestColorName(r, g, b);
+
+      colorBox.style.backgroundColor = rgb;
+      rgbText.textContent = `RGB: ${rgb}`;
+      hexText.textContent = `Hex: ${hex}`;
+      nameText.textContent = `Color Name: ${name}`;
+    });
+
+    const namedColors = {
+      Red: [255, 0, 0], Green: [0, 255, 0], Blue: [0, 0, 255],
+      Cyan: [0, 255, 255], Magenta: [255, 0, 255], Yellow: [255, 255, 0],
+      Black: [0, 0, 0], White: [255, 255, 255], Gray: [128, 128, 128],
+      Orange: [255, 165, 0], Pink: [255, 192, 203], Brown: [165, 42, 42],
+      Purple: [128, 0, 128], Violet: [238, 130, 238], Lime: [0, 255, 0],
+      Navy: [0, 0, 128], Olive: [128, 128, 0], Teal: [0, 128, 128],
+      Gold: [255, 215, 0], Beige: [245, 245, 220], Coral: [255, 127, 80]
+    };
+
+    function getClosestColorName(r, g, b) {
+      let closestName = "Unknown";
+      let closestDistance = Infinity;
+
+      for (const name in namedColors) {
+        const [nr, ng, nb] = namedColors[name];
+        const distance = Math.sqrt((r - nr) ** 2 + (g - ng) ** 2 + (b - nb) ** 2);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestName = name;
+        }
+      }
+
+      return closestName;
+    }
+
+    // Start default front camera
+    startCamera('user');
+  </script>
+</body>
+</html>
