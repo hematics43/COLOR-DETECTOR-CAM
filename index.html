@@ -1,19 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Switch Camera Color Detector</title>
+  <meta charset="UTF-8" />
+  <title>Color Detector + Themes</title>
   <style>
     body {
-      background: #111;
-      color: #fff;
       font-family: 'Segoe UI', sans-serif;
       text-align: center;
       padding: 20px;
+      transition: background 0.5s, color 0.5s;
     }
 
     h1 {
-      text-shadow: 0 0 10px #0ff;
+      text-shadow: 0 0 10px var(--accent, #0ff);
     }
 
     .card {
@@ -23,15 +22,32 @@
       padding: 20px;
       margin: auto;
       width: 95%;
-      max-width: 500px;
-      box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+      max-width: 600px;
+      box-shadow: 0 0 20px var(--accent, #0ff);
+      transition: background 0.5s, box-shadow 0.5s;
     }
 
     video {
       width: 100%;
       border-radius: 16px;
-      border: 3px solid #0ff;
+      border: 3px solid var(--accent, #0ff);
       margin-top: 10px;
+    }
+
+    #pointer {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border: 2px solid white;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+    }
+
+    #videoWrapper {
+      position: relative;
     }
 
     #colorBox {
@@ -48,29 +64,67 @@
       margin: 5px 0;
     }
 
+    .palette {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin: 10px auto;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .palette-item {
+      width: 60px;
+      text-align: center;
+      font-size: 0.7rem;
+      color: white;
+    }
+
+    .palette-item-box {
+      width: 100%;
+      height: 30px;
+      border-radius: 5px;
+      border: 2px solid white;
+      margin-bottom: 4px;
+    }
+
     button {
-      margin: 10px 5px;
-      padding: 10px 20px;
+      margin: 8px 4px;
+      padding: 10px 16px;
       font-weight: bold;
       font-size: 1rem;
       border-radius: 10px;
       border: none;
-      background: linear-gradient(45deg, #0ff, #00f2ff);
-      box-shadow: 0 0 10px #0ff;
-      color: #000;
+      background: var(--button-bg, linear-gradient(45deg, #0ff, #00f2ff));
+      box-shadow: 0 0 10px var(--accent, #0ff);
+      color: var(--button-color, #000);
       cursor: pointer;
+      transition: background 0.4s, color 0.4s;
     }
 
     button:hover {
-      background: #00e6e6;
+      filter: brightness(1.1);
+    }
+
+    footer {
+      margin-top: 30px;
+      color: #aaa;
+      font-size: 0.9rem;
     }
   </style>
 </head>
 <body>
-  <h1>🎨 Switch Camera Color Detector</h1>
+  <h1>🎨 Color Detector + 20 Themes</h1>
   <div class="card">
     <button onclick="switchCamera()">🔄 Switch Camera</button>
-    <video id="video" autoplay muted playsinline></video>
+    <button onclick="toggleFlash()">🔦 Flashlight</button>
+    <button onclick="nextTheme()">🎨 Theme</button>
+
+    <div id="videoWrapper">
+      <video id="video" autoplay muted playsinline></video>
+      <div id="pointer" style="display: none;"></div>
+    </div>
     <canvas id="canvas" style="display:none;"></canvas>
 
     <div id="colorBox"></div>
@@ -80,7 +134,19 @@
 
     <button onclick="copyColor('rgb')">Copy RGB</button>
     <button onclick="copyColor('hex')">Copy Hex</button>
+
+    <h3>🎨 Color Palette (Saved Colors)</h3>
+    <div class="palette" id="colorHistory"></div>
+
+    <button onclick="exportColors('json')">📥 Export JSON</button>
+    <button onclick="exportColors('csv')">📥 Export CSV</button>
+    <button onclick="screenshotPalette()">📸 Save Image</button>
+    <button onclick="clearPalette()">🧹 Clear History</button>
+
+    <canvas id="paletteCanvas" width="300" height="100" style="display:none;"></canvas>
   </div>
+
+  <footer>Developed by Hemant Gavde</footer>
 
   <script>
     const video = document.getElementById('video');
@@ -89,25 +155,62 @@
     const hexText = document.getElementById('hexText');
     const nameText = document.getElementById('nameText');
     const colorBox = document.getElementById('colorBox');
+    const pointer = document.getElementById('pointer');
+    const videoWrapper = document.getElementById('videoWrapper');
+    const colorHistory = document.getElementById('colorHistory');
+    const paletteCanvas = document.getElementById('paletteCanvas');
 
-    let currentStream;
-    let usingFront = true;
+    let currentStream, usingFront = true, flashOn = false, videoTrack;
+    const colorList = [];
+
+    const themes = [
+      { bg: "#111", accent: "#0ff", button: "#000" },
+      { bg: "#1a1a1a", accent: "#ff0", button: "#000" },
+      { bg: "#000", accent: "#f0f", button: "#fff" },
+      { bg: "#202020", accent: "#0f0", button: "#000" },
+      { bg: "#222", accent: "#f90", button: "#000" },
+      { bg: "#333", accent: "#09f", button: "#000" },
+      { bg: "#2c2c2c", accent: "#fc0", button: "#000" },
+      { bg: "#1f1f1f", accent: "#0fc", button: "#000" },
+      { bg: "#292929", accent: "#c0f", button: "#000" },
+      { bg: "#181818", accent: "#ff5050", button: "#000" },
+      { bg: "#000", accent: "#39ff14", button: "#000" },
+      { bg: "#111", accent: "#ffd700", button: "#000" },
+      { bg: "#000", accent: "#00d9ff", button: "#fff" },
+      { bg: "#111", accent: "#ff6ec7", button: "#000" },
+      { bg: "#1c1c1c", accent: "#d4af37", button: "#000" },
+      { bg: "#121212", accent: "#7fff00", button: "#000" },
+      { bg: "#0e0e0e", accent: "#ffa500", button: "#000" },
+      { bg: "#101010", accent: "#00ffff", button: "#000" },
+      { bg: "#090909", accent: "#ff4d4d", button: "#000" },
+      { bg: "#000000", accent: "#ffcc00", button: "#000" }
+    ];
+    let themeIndex = 0;
+
+    function applyTheme(index) {
+      const theme = themes[index];
+      document.body.style.background = theme.bg;
+      document.body.style.color = theme.button;
+      document.documentElement.style.setProperty('--accent', theme.accent);
+      document.documentElement.style.setProperty('--button-bg', `linear-gradient(45deg, ${theme.accent}, ${theme.accent})`);
+      document.documentElement.style.setProperty('--button-color', theme.button);
+    }
+
+    function nextTheme() {
+      themeIndex = (themeIndex + 1) % themes.length;
+      applyTheme(themeIndex);
+    }
 
     async function startCamera(facingMode = 'user') {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
-
+      if (currentStream) currentStream.getTracks().forEach(track => track.stop());
       try {
-        const constraints = {
+        currentStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { exact: facingMode } }
-        };
-
-        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
         video.srcObject = currentStream;
+        videoTrack = currentStream.getVideoTracks()[0];
       } catch (err) {
-        alert("Error accessing camera: " + err.message);
-        console.error(err);
+        alert("Camera error: " + err.message);
       }
     }
 
@@ -116,20 +219,36 @@
       startCamera(usingFront ? 'user' : 'environment');
     }
 
+    async function toggleFlash() {
+      if (!videoTrack) return alert("Flash not ready.");
+      const cap = videoTrack.getCapabilities();
+      if (!cap.torch) return alert("Torch not supported.");
+      try {
+        flashOn = !flashOn;
+        await videoTrack.applyConstraints({ advanced: [{ torch: flashOn }] });
+      } catch {
+        alert("Flash toggle failed.");
+      }
+    }
+
     function rgbToHex(r, g, b) {
       return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
     }
 
     function copyColor(type) {
-      const text = type === 'rgb'
-        ? rgbText.textContent.split(": ")[1]
-        : hexText.textContent.split(": ")[1];
-      navigator.clipboard.writeText(text).then(() => {
-        alert(`${type.toUpperCase()} copied: ${text}`);
-      });
+      const text = type === 'rgb' ? rgbText.textContent.split(": ")[1] : hexText.textContent.split(": ")[1];
+      navigator.clipboard.writeText(text).then(() => alert(`${type.toUpperCase()} copied: ${text}`));
     }
 
-    video.addEventListener('click', function (e) {
+    function detectColorAtPoint(clientX, clientY) {
+      const rect = video.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      pointer.style.left = `${x}px`;
+      pointer.style.top = `${y}px`;
+      pointer.style.display = 'block';
+
       const w = video.videoWidth;
       const h = video.videoHeight;
       canvas.width = w;
@@ -137,9 +256,6 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, w, h);
 
-      const rect = video.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
       const scaleX = w / rect.width;
       const scaleY = h / rect.height;
       const realX = Math.floor(x * scaleX);
@@ -155,6 +271,74 @@
       rgbText.textContent = `RGB: ${rgb}`;
       hexText.textContent = `Hex: ${hex}`;
       nameText.textContent = `Color Name: ${name}`;
+      addToPalette(hex, name, rgb);
+    }
+
+    function addToPalette(hex, name, rgb) {
+      const item = document.createElement('div');
+      item.className = "palette-item";
+      item.innerHTML = `
+        <div class="palette-item-box" style="background:${hex}"></div>
+        <div>${name}</div>
+        <div>${hex}</div>
+      `;
+      colorHistory.prepend(item);
+      colorList.unshift({ name, rgb, hex });
+      if (colorHistory.children.length > 30) {
+        colorHistory.removeChild(colorHistory.lastChild);
+        colorList.pop();
+      }
+    }
+
+    function clearPalette() {
+      colorList.length = 0;
+      colorHistory.innerHTML = "";
+    }
+
+    function exportColors(type) {
+      let content = "";
+      if (type === 'json') {
+        content = JSON.stringify(colorList, null, 2);
+        downloadFile("colors.json", content);
+      } else if (type === 'csv') {
+        content = "Name,RGB,Hex\n" + colorList.map(c => `${c.name},${c.rgb},${c.hex}`).join("\n");
+        downloadFile("colors.csv", content);
+      }
+    }
+
+    function downloadFile(filename, content) {
+      const blob = new Blob([content], { type: "text/plain" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+
+    function screenshotPalette() {
+      const ctx = paletteCanvas.getContext('2d');
+      const boxSize = 30;
+      const count = Math.min(colorList.length, 10);
+      paletteCanvas.width = boxSize * count;
+      paletteCanvas.height = boxSize;
+
+      ctx.clearRect(0, 0, paletteCanvas.width, paletteCanvas.height);
+      for (let i = 0; i < count; i++) {
+        ctx.fillStyle = colorList[i].hex;
+        ctx.fillRect(i * boxSize, 0, boxSize, boxSize);
+      }
+
+      paletteCanvas.toBlob(blob => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = "palette.png";
+        link.click();
+      });
+    }
+
+    video.addEventListener('click', e => detectColorAtPoint(e.clientX, e.clientY));
+    video.addEventListener('touchstart', e => {
+      const touch = e.touches[0];
+      detectColorAtPoint(touch.clientX, touch.clientY);
     });
 
     const namedColors = {
@@ -170,7 +354,6 @@
     function getClosestColorName(r, g, b) {
       let closestName = "Unknown";
       let closestDistance = Infinity;
-
       for (const name in namedColors) {
         const [nr, ng, nb] = namedColors[name];
         const distance = Math.sqrt((r - nr) ** 2 + (g - ng) ** 2 + (b - nb) ** 2);
@@ -179,11 +362,11 @@
           closestName = name;
         }
       }
-
       return closestName;
     }
 
-    // Start default front camera
+    // Init
+    applyTheme(0);
     startCamera('user');
   </script>
 </body>
